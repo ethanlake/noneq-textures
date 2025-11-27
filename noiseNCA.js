@@ -490,6 +490,7 @@ const PROGRAMS = {
     uniform float u_zoom;
     uniform float u_perceptionCircle, u_arrows;
     uniform float u_viewChannel;  // -1 = RGB, -2 = grayscale, 0+ = hidden channel index
+    uniform float u_invertColors;  // 1.0 = invert, 0.0 = normal
     varying vec2 uv;
 
     float clip01(float x) {
@@ -632,7 +633,11 @@ const PROGRAMS = {
                 }
             } 
 
-            gl_FragColor = vec4(clamp(rgb, 0.0, 1.0), 1.0);
+            rgb = clamp(rgb, 0.0, 1.0);
+            if (u_invertColors > 0.5) {
+                rgb = vec3(1.0) - rgb;
+            }
+            gl_FragColor = vec4(rgb, 1.0);
         }
     }`
 }
@@ -765,6 +770,7 @@ export class NoiseNCA {
         this.visMode = 'color';
         this.hexGrid = false;
         this.viewChannel = -1.0;  // -1 = RGB, -2 = grayscale, 0+ = hidden channel index
+        this.invertColors = false;
 
         this.noise_level = models.noise_level;
 
@@ -1099,6 +1105,7 @@ export class NoiseNCA {
             u_arrows: this.arrowsCoef,
             u_hexGrid: this.hexGrid,
             u_viewChannel: viewChannel,
+            u_invertColors: this.invertColors ? 1.0 : 0.0,
         };
         let inputBuf = this.buf.state;
         if (this.visMode != 'color') {

@@ -83,6 +83,7 @@ export function createDemo(divId) {
         altTextureName: "bubbly_0101",
         altTextureIdx: 0,
         blendFactor: 0.0,
+        invertColors: false,
 
         texture_img: null,
 
@@ -316,6 +317,7 @@ export function createDemo(divId) {
         ca.alignment = params.alignment;
         ca.rotationAngle = params.rotationAngle;
         ca.blendFactor = params.blendFactor;
+        ca.invertColors = params.invertColors;
 
         // Populate channel selector with hidden channels
         populateChannelSelector();
@@ -567,6 +569,14 @@ export function createDemo(divId) {
         $('#altTexture').onchange = () => {
             selectingAltTexture = $('#altTexture').checked;
             console.log('Alt texture mode:', selectingAltTexture);
+        };
+
+        // Invert colors checkbox
+        $('#invertColors').onchange = () => {
+            params.invertColors = $('#invertColors').checked;
+            if (ca) {
+                ca.invertColors = params.invertColors;
+            }
         };
 
         // Channel view selector
