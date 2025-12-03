@@ -142,16 +142,43 @@ def generate_french_flag(size=256, num_stripes=None, smooth=False):
     return img
 
 
+def generate_japanese_flag(size=256, num_stripes=None, smooth=False):
+    """Generate a Japanese flag pattern: white background with red circle in center."""
+    img = np.ones((size, size, 3), dtype=np.uint8) * 255  # White background
+    
+    # Japanese flag colors (RGB)
+    red = np.array([188, 0, 45], dtype=np.uint8)  # Standard Japanese red
+    
+    center = size / 2
+    # Red circle diameter is typically 3/5 of the flag height
+    radius = (size * 3) / 10
+    
+    for y in range(size):
+        for x in range(size):
+            # Calculate distance from center
+            dx = x - center + 0.5
+            dy = y - center + 0.5
+            dist = np.sqrt(dx**2 + dy**2)
+            
+            if dist <= radius:
+                img[y, x, :] = red
+    
+    return img
+
+
 def save_texture(img, filename, quality=95):
-    """Save image as JPEG with specified quality."""
+    """Save image in appropriate format based on file extension."""
     pil_img = Image.fromarray(img)
-    pil_img.save(filename, 'JPEG', quality=quality)
+    if filename.lower().endswith('.png'):
+        pil_img.save(filename, 'PNG')
+    else:
+        pil_img.save(filename, 'JPEG', quality=quality)
 
 
 def main():
     parser = argparse.ArgumentParser(description='Generate synthetic texture images')
     parser.add_argument('--pattern', type=str, default='vertical_stripes',
-                        choices=['vertical_stripes', 'horizontal_stripes', 'diagonal_stripes', 'bullseye', 'burst', 'french_flag'],
+                        choices=['vertical_stripes', 'horizontal_stripes', 'diagonal_stripes', 'bullseye', 'burst', 'french_flag', 'japanese_flag'],
                         help='Pattern type to generate')
     parser.add_argument('--output', type=str, default='generated_texture.jpg',
                         help='Output filename')
@@ -176,6 +203,11 @@ def main():
         img = generate_burst(size=args.size, num_rays=args.num_stripes, smooth=args.smooth)
     elif args.pattern == 'french_flag':
         img = generate_french_flag(size=args.size, smooth=args.smooth)
+    elif args.pattern == 'japanese_flag':
+        img = generate_japanese_flag(size=args.size, smooth=args.smooth)
+        # Use PNG for Japanese flag to avoid JPEG artifacts on circle edges
+        if not args.output.lower().endswith('.png'):
+            args.output = args.output.rsplit('.', 1)[0] + '.png'
     
     save_texture(img, args.output)
     print(f"Generated {args.pattern} texture: {args.output}")

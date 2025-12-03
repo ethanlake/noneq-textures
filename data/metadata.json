@@ -55,6 +55,8 @@
     "thin_vertical_stripes",
     "smooth_thin_vertical_stripes",
     "smooth_thin_horizontal_stripes",
-    "burst"
+    "burst",
+    "french_flag",
+    "japanese_flag"
   ]
 }

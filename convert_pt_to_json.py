@@ -115,12 +115,41 @@ def export_np_models_to_json(np_models, metadata):
             if metadata['pos_emb']:
                 c += 2  # Positional embedding channels
             
+            # Detect number of filters (2 for rotation-invariant, 4 for standard)
+            filter_channels = layer.shape[1] - c  # Number of filter input channels
+            
+            # Check if this is a 2-filter (rotation-invariant) or 4-filter model
+            if filter_channels % 2 == 0 and filter_channels % 4 != 0:
+                # 2-filter rotation-invariant model: pad to 4 filters for JS compatibility
+                # JS outputs: [ident, sobel_x, sobel_y, lap]
+                # Model expects: [ident, lap]
+                # Solution: pad to [ident, zero, zero, lap] so JS output matches model input
+                chn = filter_channels // 2
+                s = layer[:, :-c].shape  # [n, 2 * chn, fc_dim]
+                filter_data = layer[:, :-c].reshape(s[0], chn, 2, s[2])  # [n, chn, 2, fc_dim]
+                # Extract identity (index 0) and laplacian (index 1)
+                ident = filter_data[:, :, 0:1, :]  # [n, chn, 1, fc_dim]
+                lap = filter_data[:, :, 1:2, :]    # [n, chn, 1, fc_dim]
+                # Pad to 4 filters: [ident, zero, zero, lap]
+                # Zero weights for sobel_x and sobel_y (filter bands 1 and 2)
+                zero = np.zeros_like(ident)  # [n, chn, 1, fc_dim]
+                filter_data_padded = np.concatenate([
+                    ident, zero, zero, lap
+                ], axis=2)  # [n, chn, 4, fc_dim]
+                layer[:, :-c] = filter_data_padded.reshape(s[0], chn * 4, s[2])
+                chn = chn  # Keep chn for rearrangement
+            elif filter_channels % 4 == 0:
+                # Standard 4-filter model
+                chn = filter_channels // 4
+            else:
+                raise ValueError(f"Cannot determine number of filters from input channels: {filter_channels}")
+            
             # Rearrange filter channels (4 filters: id, sobelx, sobely, lap)
-            s = layer[:, :-c].shape  # [n, c_in - c, fc_dim]
+            s = layer[:, :-c].shape  # [n, 4 * chn, fc_dim] (after padding if needed)
             layer[:, :-c] = (layer[:, :-c]
-                            .reshape(s[0], -1, 4, s[2])  # [n, c_in//4, 4, fc_dim]
-                            .transpose(0, 2, 1, 3)  # [n, 4, c_in//4, fc_dim]
-                            .reshape(s))  # [n, c_in - c, fc_dim]
+                            .reshape(s[0], chn, 4, s[2])  # [n, chn, 4, fc_dim]
+                            .transpose(0, 2, 1, 3)  # [n, 4, chn, fc_dim]
+                            .reshape(s))  # [n, 4 * chn, fc_dim]
         
         # Pad channels to be multiple of 4 (WebGL requirement)
         s = layer.shape  # [n, c_in, fc_dim]

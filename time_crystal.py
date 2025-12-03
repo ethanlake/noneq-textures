@@ -70,9 +70,10 @@ def compute_pixel_distance(s1, s2):
 
 
 def run_distance_mode(model, device, height, width, dx, dy, dt, epsilon,
-                      tquench, tevolve, n_runs):
+                      tquench, tevolve, n_runs, sample_interval=1.0):
     """
     Run distance mode: compute pixel-wise L2 distance from reference state s0.
+    Optimized version that batches all runs together for parallel execution.
     
     Args:
         model: NCA model
@@ -84,6 +85,7 @@ def run_distance_mode(model, device, height, width, dx, dy, dt, epsilon,
         tquench: Time to evolve before starting measurement
         tevolve: Time to evolve while measuring
         n_runs: Number of independent runs
+        sample_interval: Time interval between distance measurements (default: 1.0)
     
     Returns:
         times: Array of time steps after tquench
@@ -92,12 +94,22 @@ def run_distance_mode(model, device, height, width, dx, dy, dt, epsilon,
     """
     model.eval()
     
+    # Try to compile model for speed (PyTorch 2.0+)
+    try:
+        if hasattr(torch, 'compile'):
+            model = torch.compile(model, mode='reduce-overhead')
+            print("Model compiled with torch.compile() for speedup")
+    except:
+        pass
+    
     # Calculate steps
     steps_quench = int(tquench / dt)
     steps_evolve = int(tevolve / dt)
+    steps_sample = max(1, int(sample_interval / dt))
     
     print(f"Quench: {steps_quench} steps (t={tquench})")
     print(f"Evolve: {steps_evolve} steps (t={tevolve})")
+    print(f"Sampling distance every {steps_sample} steps (interval={sample_interval})")
     
     # Step 1: Quench phase - evolve to reference state s0
     print("\nQuenching to reference state...")
@@ -125,41 +137,41 @@ def run_distance_mode(model, device, height, width, dx, dy, dt, epsilon,
     plt.tight_layout()
     plt.show()
     
-    # Step 2: Evolution phase - compute distances for n_runs
-    print(f"\nRunning {n_runs} independent trials...")
-    all_distances = []
+    # Step 2: Evolution phase - batch all runs together for parallel execution
+    print(f"\nRunning {n_runs} independent trials in parallel...")
     
-    for run in range(n_runs):
-        print(f"\nRun {run + 1}/{n_runs}")
-        distances_run = []
+    with torch.no_grad():
+        # Batch all runs: expand s0 to [n_runs, chn, h, w]
+        s = s0.repeat(n_runs, 1, 1, 1)  # [n_runs, chn, h, w]
+        s0_batch = s0.repeat(n_runs, 1, 1, 1)  # [n_runs, chn, h, w] - reference for all runs
         
-        with torch.no_grad():
-            # Start from same reference state s0 (but will diverge due to noise)
-            s = s0.clone()
+        distances_list = []
+        times_list = []
+        
+        for step in tqdm(range(steps_evolve), desc="Evolving"):
+            # Evolve all runs in parallel
+            s = model(s, dx=dx, dy=dy, dt=dt)
             
-            for step in tqdm(range(steps_evolve), desc=f"Run {run + 1}"):
-                # Evolve state
-                s = model(s, dx=dx, dy=dy, dt=dt)
+            # Apply per-step noise if epsilon > 0 (each run gets independent noise)
+            if epsilon > 0:
+                noise = (torch.rand_like(s) - 0.5) * epsilon
+                s = s + noise
+            
+            # Sample distance at specified intervals
+            if step % steps_sample == 0:
+                # Compute distance for all runs in parallel
+                # s is [n_runs, chn, h, w], s0_batch is [n_runs, chn, h, w]
+                diff = s[:, :3, :, :] - s0_batch[:, :3, :, :]  # RGB channels only
+                pixel_distances = torch.norm(diff, dim=1)  # [n_runs, h, w]
+                avg_dist = pixel_distances.mean(dim=(1, 2))  # [n_runs] - average per run
+                mean_dist = avg_dist.mean().item()  # Average over all runs
                 
-                # Apply per-step noise if epsilon > 0
-                if epsilon > 0:
-                    noise = (torch.rand_like(s) - 0.5) * epsilon
-                    s = s + noise
-                
-                # Compute distance from reference s0
-                # s is [1, 3, h, w] (RGB only from s0)
-                # s0 is [1, 3, h, w]
-                dist = compute_pixel_distance(s, s0)
-                distances_run.append(dist)
-        
-        all_distances.append(distances_run)
+                distances_list.append(mean_dist)
+                times_list.append(step * dt)
     
-    # Average over runs
-    all_distances = np.array(all_distances)  # [n_runs, steps_evolve]
-    distances = np.mean(all_distances, axis=0)  # [steps_evolve]
-    
-    # Create time array
-    times = np.arange(steps_evolve) * dt
+    # Convert to numpy arrays
+    times = np.array(times_list)
+    distances = np.array(distances_list)
     
     return times, distances, s0_rgb
 
@@ -190,6 +202,8 @@ def main():
                         help='Burn-in time before measurement (default: 100.0)')
     parser.add_argument('--tevolve', type=float, default=500.0,
                         help='Time to evolve while measuring (default: 500.0)')
+    parser.add_argument('--sample_interval', type=float, default=1.0,
+                        help='Time interval between distance measurements (default: 1.0)')
     parser.add_argument('--output', type=str, default=None,
                         help='Output plot filename (default: auto-generated)')
     parser.add_argument('--device', type=str, default='cuda' if torch.cuda.is_available() else 'cpu',
@@ -236,7 +250,7 @@ def main():
         times, distances, s0_rgb = run_distance_mode(
             model, device, args.height, args.width,
             args.dx, args.dx, args.dt, args.epsilon,
-            args.tquench, args.tevolve, args.n_runs
+            args.tquench, args.tevolve, args.n_runs, args.sample_interval
         )
         
         # Plot results
