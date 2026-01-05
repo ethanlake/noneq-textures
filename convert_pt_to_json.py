@@ -46,7 +46,9 @@ def torch_model_to_np(state_dict):
     Convert PyTorch state_dict to numpy arrays following the notebook convention.
     
     Returns:
-        List of numpy arrays: [layer1_params, layer2_params, ..., noise_level]
+        Tuple of (layers, is_rotation_invariant) where:
+        - layers: List of numpy arrays: [layer1_params, layer2_params, ..., noise_level]
+        - is_rotation_invariant: Boolean indicating if model uses 2 filters (rotation-invariant)
     """
     layers = []
 
@@ -56,10 +58,28 @@ def torch_model_to_np(state_dict):
                         f"Available keys: {list(state_dict.keys())[:10]}...")
     
     w1 = state_dict['w1.weight'][:, :, 0, 0].detach().cpu().numpy()
-    # w1 shape: [fc_dim, chn] (out_channels, in_channels)
+    # w1 shape: [fc_dim, in_channels] where in_channels is either chn*2 or chn*4
     
     b1 = state_dict['w1.bias'][:, None].detach().cpu().numpy()
     # b1 shape: [fc_dim, 1]
+    
+    # Layer 2: w2.weight (no bias) - needed to determine chn
+    if 'w2.weight' not in state_dict:
+        raise ValueError("Could not find 'w2.weight' in state_dict. "
+                        f"Available keys: {list(state_dict.keys())[:10]}...")
+    
+    w2 = state_dict['w2.weight'][:, :, 0, 0].detach().cpu().numpy()
+    # w2 shape: [chn, fc_dim] (after extracting [:, :, 0, 0] from [chn, fc_dim, 1, 1])
+    
+    # Detect rotation-invariant model by checking w1 input channels
+    # w1 has shape [fc_dim, in_channels] (after extracting [:, :, 0, 0])
+    # w2 has shape [chn, fc_dim] (after extracting [:, :, 0, 0])
+    in_channels = w1.shape[1]  # Number of input channels to w1 (excluding bias)
+    chn = w2.shape[0]  # Number of channels in the model (output channels from w2)
+    
+    # Rotation-invariant models have 2 filters: in_channels = chn * 2
+    # Standard models have 4 filters: in_channels = chn * 4
+    is_rotation_invariant = (in_channels == chn * 2)
     
     # Concatenate and transpose: [chn, fc_dim] -> [chn+1, fc_dim] after adding bias
     layer1_params = np.concatenate([w1, b1], axis=1).T
@@ -67,13 +87,8 @@ def torch_model_to_np(state_dict):
     layer1_params = layer1_params[None, ...]  # Add batch dimension: [1, chn+1, fc_dim]
     layers.append(layer1_params)
 
-    # Layer 2: w2.weight (no bias)
-    if 'w2.weight' not in state_dict:
-        raise ValueError("Could not find 'w2.weight' in state_dict. "
-                        f"Available keys: {list(state_dict.keys())[:10]}...")
-    
-    w2 = state_dict['w2.weight'][:, :, 0, 0].detach().cpu().numpy().T
     # w2 shape after transpose: [in_channels, out_channels]
+    w2 = w2.T
     w2 = w2[None, ...]  # Add batch dimension: [1, in_channels, out_channels]
     layers.append(w2)
     
@@ -84,7 +99,7 @@ def torch_model_to_np(state_dict):
         noise_level = 0.1  # Default
     layers.append(noise_level)
 
-    return layers
+    return layers, is_rotation_invariant
 
 
 def export_np_models_to_json(np_models, metadata):
@@ -101,7 +116,8 @@ def export_np_models_to_json(np_models, metadata):
     models_js = {
         'model_names': metadata['model_names'],
         'layers': [],
-        'noise_level': np_models[-1]
+        'noise_level': np_models[-1],
+        'rotation_invariant': metadata.get('rotation_invariant', False)
     }
     
     for i, layer in enumerate(np_models[:-1]):
@@ -115,15 +131,13 @@ def export_np_models_to_json(np_models, metadata):
             if metadata['pos_emb']:
                 c += 2  # Positional embedding channels
             
-            # Detect number of filters (2 for rotation-invariant, 4 for standard)
+            # Get rotation-invariant flag from metadata (detected earlier from model structure)
+            is_rotation_invariant = metadata.get('rotation_invariant', False)
             filter_channels = layer.shape[1] - c  # Number of filter input channels
             
             # Check if this is a 2-filter (rotation-invariant) or 4-filter model
-            if filter_channels % 2 == 0 and filter_channels % 4 != 0:
+            if is_rotation_invariant:
                 # 2-filter rotation-invariant model: pad to 4 filters for JS compatibility
-                # JS outputs: [ident, sobel_x, sobel_y, lap]
-                # Model expects: [ident, lap]
-                # Solution: pad to [ident, zero, zero, lap] so JS output matches model input
                 chn = filter_channels // 2
                 s = layer[:, :-c].shape  # [n, 2 * chn, fc_dim]
                 filter_data = layer[:, :-c].reshape(s[0], chn, 2, s[2])  # [n, chn, 2, fc_dim]
@@ -136,25 +150,33 @@ def export_np_models_to_json(np_models, metadata):
                 filter_data_padded = np.concatenate([
                     ident, zero, zero, lap
                 ], axis=2)  # [n, chn, 4, fc_dim]
-                layer[:, :-c] = filter_data_padded.reshape(s[0], chn * 4, s[2])
-                chn = chn  # Keep chn for rearrangement
-            elif filter_channels % 4 == 0:
+                # Create new layer array with padded filters
+                padded_filters = filter_data_padded.reshape(s[0], chn * 4, s[2])  # [n, 4 * chn, fc_dim]
+                # Reconstruct layer with padded filters and bias/pos_emb
+                layer = np.concatenate([padded_filters, layer[:, -c:]], axis=1)  # [n, 4 * chn + c, fc_dim]
+            else:
                 # Standard 4-filter model
                 chn = filter_channels // 4
-            else:
-                raise ValueError(f"Cannot determine number of filters from input channels: {filter_channels}")
+                if filter_channels % 4 != 0:
+                    raise ValueError(f"Expected 4-filter model but filter_channels ({filter_channels}) is not divisible by 4")
             
             # Rearrange filter channels (4 filters: id, sobelx, sobely, lap)
             s = layer[:, :-c].shape  # [n, 4 * chn, fc_dim] (after padding if needed)
-            layer[:, :-c] = (layer[:, :-c]
+            # Reconstruct the layer to avoid in-place assignment issues
+            rearranged_filters = (layer[:, :-c]
                             .reshape(s[0], chn, 4, s[2])  # [n, chn, 4, fc_dim]
                             .transpose(0, 2, 1, 3)  # [n, 4, chn, fc_dim]
                             .reshape(s))  # [n, 4 * chn, fc_dim]
+            layer = np.concatenate([rearranged_filters, layer[:, -c:]], axis=1)  # [n, 4 * chn + c, fc_dim]
+            # Update shape to reflect padded dimensions
+            shape = [layer.shape[1], layer.shape[2]]  # [c_in, fc_dim] after padding
         
         # Pad channels to be multiple of 4 (WebGL requirement)
         s = layer.shape  # [n, c_in, fc_dim]
         layer = np.pad(layer, ((0, 0), (0, 0), (0, (4 - s[2]) % 4)), mode='constant')
         # After padding: [n, c_in, padded_fc_dim] where padded_fc_dim is multiple of 4
+        # Update shape to reflect fc_dim padding
+        shape = [shape[0], layer.shape[2]]  # [c_in, padded_fc_dim]
         
         # Reshape for RGBA packing: [n, c_in, padded_fc_dim] -> [n, c_in, padded_fc_dim//4, 4]
         layer = layer.reshape(s[0], s[1], -1, 4)  # [n, c_in, fc_dim//4, 4]
@@ -213,8 +235,8 @@ def convert_pt_to_json(pt_path, output_path=None, noise_level=None, pos_emb=Fals
     print(f"Loading PyTorch model from: {pt_path}")
     state_dict = torch.load(pt_path, map_location='cpu')
     
-    # Convert to numpy format
-    np_params = torch_model_to_np(state_dict)
+    # Convert to numpy format and detect rotation-invariant
+    np_params, is_rotation_invariant = torch_model_to_np(state_dict)
     
     # Override noise_level if provided
     if noise_level is not None:
@@ -226,7 +248,8 @@ def convert_pt_to_json(pt_path, output_path=None, noise_level=None, pos_emb=Fals
     # Export to JSON format
     metadata = {
         'model_names': [model_name],
-        'pos_emb': pos_emb
+        'pos_emb': pos_emb,
+        'rotation_invariant': is_rotation_invariant
     }
     
     js_models = export_np_models_to_json(np_params, metadata)

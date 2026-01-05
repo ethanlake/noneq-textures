@@ -226,6 +226,49 @@ const PREFIX = `
     }
 `;
 
+// Simplified 2-filter perception shader for rotation-invariant models only
+const PERCEPTION_ROTINV_SIMPLE = `
+    const highp mat3 lapX = mat3(0.5, 0.0, 0.5, 2.0, -6.0, 2.0, 0.5, 0.0, 0.5);
+    const highp mat3 lapY = mat3(0.5, 2.0, 0.5, 0.0, -6.0, 0.0, 0.5, 2.0, 0.5);
+
+    vec4 conv3x3(vec2 xy, float inputCh, mat3 filter) {
+        highp vec4 a = vec4(0.0);
+        for (int y=0; y<3; ++y)
+        for (int x=0; x<3; ++x) {
+          highp vec2 p = xy+vec2(float(x-1), float(y-1));
+          a += filter[y][x] * u_input_read(p, inputCh);
+        }
+        return a;
+    }
+
+    uniform float u_seed, u_updateProbability;
+    uniform float u_dx, u_dy;
+    
+    void main() {
+        vec2 xy = getOutputXY();
+        float ch = getOutputChannel();
+        if (ch >= u_output.depth4)
+            return;
+            
+        float filterBand = floor((ch+0.5)/u_input.depth4);
+        float inputCh = ch-filterBand*u_input.depth4; 
+        
+        // Simplified 2-filter rotation-invariant: only identity and full laplacian
+        if (filterBand < 0.5) {
+            // Filter band 0: identity
+            setOutput(u_input_read(xy, inputCh));
+        } else {
+            // Filter band 1: full rotation-invariant laplacian (lapX + lapY)
+            // Matches Python: full_lap = lap_x + lap_x.T
+            mat3 fullLap = lapX + lapY;
+            highp vec4 res = conv3x3(xy, inputCh, fullLap);
+            // Python multiplies by (dx^2 + dy^2) / 2.0 when dx != 1.0 or dy != 1.0
+            float scale = (u_dx * u_dx + u_dy * u_dy) / 2.0;
+            res = res * scale;
+            setOutput(res);
+        }
+    }`;
+
 const PROGRAMS = {
     paint: `
     uniform highp vec2 u_pos;
@@ -310,30 +353,57 @@ const PROGRAMS = {
         float filterBand = floor((ch+0.5)/u_input.depth4);
         // inputCh: this is the channel idx in the original tensor
         float inputCh = ch-filterBand*u_input.depth4; 
+        
+        #ifdef ROTATION_INVARIANT
+        // Rotation-invariant model: only identity and full laplacian (lapX + lapY)
+        // Matches Python: full_lap = lap_x + lap_x.T
+        if (filterBand < 0.5) {
+            // Filter band 0: identity
+            setOutput(u_input_read(xy, inputCh));
+        } else {
+            // Filter band 3: full laplacian (rotation-invariant)
+            // Skip filter bands 1 and 2 (sobel filters) - output zero
+            if (filterBand < 2.5) {
+                setOutput(vec4(0.0));
+            } else {
+                // Full rotation-invariant laplacian: lapX + lapY (matches Python: lap_x + lap_x.T)
+                // Python: when dx=1.0, dy=1.0, returns without scaling
+                //         when dx != 1.0 or dy != 1.0, multiplies by (dx^2 + dy^2) / 2.0
+                mat3 fullLap = lapX + lapY;
+                highp vec4 res = conv3x3(xy, inputCh, fullLap);
+                
+                // Match Python exactly: only scale when dx != 1.0 or dy != 1.0
+                // Python: when dx=1.0, dy=1.0, returns z without scaling
+                //         when dx != 1.0 or dy != 1.0, multiplies z by scale where:
+                //         identity channels get scale=1.0, laplacian channels get scale=(dx^2+dy^2)/2.0
+                if (abs(u_dx - 1.0) < 0.0001 && abs(u_dy - 1.0) < 0.0001) {
+                    // dx=1.0, dy=1.0: no scaling (matches Python)
+                    setOutput(res);
+                } else {
+                    // Scale by (dx^2 + dy^2) / 2.0 (Python multiplies by this)
+                    float scale = (u_dx * u_dx + u_dy * u_dy) / 2.0;
+                    res = res * scale;
+                    setOutput(res);
+                }
+            }
+        }
+        #else
+        // Standard model: identity, sobel_x, sobel_y, laplacian
         if (filterBand < 0.5) {
             setOutput(u_input_read(xy, inputCh));
         } else if (filterBand < 2.5) {
-            // highp vec4 dx = conv3x3(xy, inputCh, sobelX);
-            // highp vec4 dy = conv3x3(xy, inputCh, sobelY);
-            // highp vec2 dir = getCellDirection(xy);
-            // float s = dir.x, c = dir.y;
-            // highp vec4 res = filterBand < 1.5 ? dx*c-dy*s / u_dx: dx*s+dy*c / u_dy;
-            // setOutput(res);
-            
             highp vec4 dx = conv3x3(xy, inputCh, sobelX) / u_dx;
             highp vec4 dy = conv3x3(xy, inputCh, sobelY) / u_dy;
             highp vec2 dir = getCellDirection(xy);
             float s = dir.x, c = dir.y;
             highp vec4 res = filterBand < 1.5 ? dx*c-dy*s: dx*s+dy*c;
             setOutput(res);
-        
-        
         } else {
             mat3 lap = lapX / (u_dx * u_dx) + lapY / (u_dy * u_dy);
             highp vec4 res = conv3x3(xy, inputCh, lap);
-
             setOutput(res);
         }
+        #endif
     }`,
     dense: `
     ${defInput('u_control')}
@@ -695,7 +765,39 @@ function setTensorUniforms(uniforms, name, tensor) {
     }
 }
 
-function createDenseInfo(gl, params) {
+function extractRotInvWeights(params) {
+    // Extract 2-filter weights from padded 4-filter format for rotation-invariant models
+    // Padded format: [ident, zero, zero, lap] -> Extract: [ident, lap]
+    // Only needed for first layer
+    if (!params.bias) return params; // Not first layer, no extraction needed
+    
+    const [in_n, out_n] = params.shape;
+    const pos_emb = params.pos_emb ? 2 : 0;
+    const bias = params.bias ? 1 : 0;
+    const filter_channels = in_n - pos_emb - bias;
+    
+    // Check if this is a padded rotation-invariant model (4 filters, but should be 2)
+    // We can detect this by checking if filter_channels is divisible by 4
+    // and if the model is marked as rotation-invariant
+    if (filter_channels % 4 !== 0) return params; // Not padded, return as-is
+    
+    // Extract: take filter bands 0 (identity) and 3 (laplacian), skip 1 and 2 (zeros)
+    const chn = filter_channels / 4; // Number of channels per filter band
+    const new_filter_channels = chn * 2; // 2 filters instead of 4
+    const new_in_n = new_filter_channels + pos_emb + bias;
+    
+    // Reshape data to extract only bands 0 and 3
+    const data = new Float32Array(params.data_flatten);
+    const [old_w, old_h] = params.data_shape;
+    const old_depth4 = Math.ceil(in_n / 4);
+    const new_depth4 = Math.ceil(new_in_n / 4);
+    
+    // For now, return params as-is - we'll handle extraction in the shader instead
+    // This is simpler than extracting weights here
+    return params;
+}
+
+function createDenseInfo(gl, params, isRotInvSimple = false) {
     // params is basically one of layers from the json file
 
     const center = "center" in params ? params.center : 127.0 / 255.0;
@@ -714,6 +816,21 @@ function createDenseInfo(gl, params) {
     ch_in = info.bias ? ch_in - 1 : ch_in;
     info.in_n = ch_in;
     info.coefs = [params.scale, center];
+    
+    // For rotation-invariant simplified mode, we need to adjust input channels
+    // The weights are padded to 4 filters, but we only use 2 (bands 0 and 3)
+    // So we need to extract only those weights
+    if (isRotInvSimple && info.bias) {
+        // First layer: extract only identity (band 0) and laplacian (band 3) weights
+        // The weights are arranged as: [ident_chn0, ident_chn1, ..., zero_chn0, ..., zero_chn1, ..., lap_chn0, ...]
+        // We need: [ident_chn0, ident_chn1, ..., lap_chn0, ...]
+        const filter_channels = ch_in;
+        if (filter_channels % 4 === 0) {
+            const chn = filter_channels / 4; // channels per filter band
+            // Extract bands 0 and 3, skip 1 and 2
+            // This is complex - for now, we'll handle it in the shader by using a simplified perception
+        }
+    }
 
     if ("data_flatten" in params) {
         let width = params.data_shape[1];
@@ -773,6 +890,7 @@ export class NoiseNCA {
         this.invertColors = false;
 
         this.noise_level = models.noise_level;
+        this.rotation_invariant = models.rotation_invariant || false;
 
         this.layers = [];
         this.altLayers = [];  // Alternate texture weights for blending
@@ -780,7 +898,8 @@ export class NoiseNCA {
         this.setWeights(models);
 
         const defs = (this.circular_padding ? '#define CIRCULAR_PADDING\n' : '') +
-            (this.shuffledMode ? '#define SPARSE_UPDATE\n' : '');
+            (this.shuffledMode ? '#define SPARSE_UPDATE\n' : '') +
+            (this.rotation_invariant ? '#define ROTATION_INVARIANT\n' : '');
 
 
         this.progs = createPrograms(gl, defs);

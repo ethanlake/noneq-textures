@@ -160,6 +160,42 @@ export function createDemo(divId) {
             // dtd.href = "https://www.robots.ox.ac.uk/~vgg/data/dtd/"
             $("#texhinttext").innerHTML = '';
             $("#texhinttext").appendChild(dtd);
+            
+            // Add rotation-invariant indicator if applicable
+            console.log('setTextureModel called for:', params.texture_name);
+            console.log('rotationInvariantMap value:', rotationInvariantMap[params.texture_name]);
+            
+            // Check if rotation-invariant (from pre-loaded map, or check directly if not found)
+            let isRotInv = rotationInvariantMap[params.texture_name];
+            if (isRotInv === undefined) {
+                // Fallback: check model directly if not in map
+                console.warn('Texture not in rotationInvariantMap, checking model directly...');
+                try {
+                    const modelPath = "data/models/" + params.texture_name + ".json";
+                    const r = await fetch(modelPath);
+                    if (r.ok) {
+                        const model = await r.json();
+                        isRotInv = model.hasOwnProperty('rotation_invariant') ? model.rotation_invariant : false;
+                        rotationInvariantMap[params.texture_name] = isRotInv; // Cache it
+                    }
+                } catch (e) {
+                    console.warn('Failed to check model:', e);
+                    isRotInv = false;
+                }
+            }
+            
+            if (isRotInv) {
+                console.log('✓ Adding rot-invariant text for:', params.texture_name);
+                let rotInvText = document.createElement('p')
+                rotInvText.innerHTML = "rot-invariant"
+                rotInvText.style.color = 'blue'
+                rotInvText.style.fontWeight = 'bold'
+                rotInvText.style.marginTop = '4px'
+                rotInvText.style.marginBottom = '0'
+                $("#texhinttext").appendChild(rotInvText)
+            } else {
+                console.log('  NOT rotation-invariant:', params.texture_name);
+            }
 
 
             updateCA();
@@ -194,6 +230,36 @@ export function createDemo(divId) {
         // Make loadAltModel accessible from updateCA
         loadAltModelFn = loadAltModel;
 
+        // Pre-load all model JSONs to check for rotation_invariant flags
+        const rotationInvariantMap = {};
+        const modelLoadPromises = texture_names.map(async (texture_name) => {
+            try {
+                const modelPath = "data/models/" + texture_name + ".json";
+                const r = await fetch(modelPath);
+                if (!r.ok) {
+                    console.warn('Failed to fetch model for', texture_name, ':', r.status, r.statusText);
+                    rotationInvariantMap[texture_name] = false;
+                    return;
+                }
+                const model = await r.json();
+                // Check if rotation_invariant field exists (may be undefined for older models)
+                const isRotInv = model.hasOwnProperty('rotation_invariant') ? model.rotation_invariant : false;
+                rotationInvariantMap[texture_name] = isRotInv;
+                if (isRotInv) {
+                    console.log('✓ Detected rotation-invariant model:', texture_name);
+                } else {
+                    console.log('  Standard model (not rotation-invariant):', texture_name);
+                }
+            } catch (e) {
+                console.warn('Failed to load model for', texture_name, ':', e);
+                rotationInvariantMap[texture_name] = false;
+            }
+        });
+        await Promise.all(modelLoadPromises);
+        console.log('=== Rotation-invariant map (complete) ===');
+        console.log(rotationInvariantMap);
+        console.log('==========================================');
+
         let len = texture_names.length;
         console.log('Loading', len, 'textures from metadata');
         for (let idx = 0; idx < len; idx++) {
@@ -223,6 +289,14 @@ export function createDemo(divId) {
             texture.onclick = () => {
                 // removeOverlayIcon();
                 console.log('Texture clicked, selectingAltTexture:', selectingAltTexture, 'idx:', idx);
+                console.log('  texture_name:', texture_name);
+                console.log('  rotationInvariantMap[' + texture_name + ']:', rotationInvariantMap[texture_name]);
+                console.log('  rotationInvariantMap keys:', Object.keys(rotationInvariantMap));
+                if (rotationInvariantMap[texture_name]) {
+                    console.log('  → Rotation-invariant texture selected:', texture_name);
+                } else {
+                    console.log('  → NOT rotation-invariant (or not in map):', texture_name);
+                }
                 if (selectingAltTexture) {
                     // Selecting alternate texture (green border)
                     console.log('Selecting alt texture');

@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+
+
+    <!-- Google tag (gtag.js) -->
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-SJ9P1D5C47"></script>
+    <script>
+        window.dataLayer = window.dataLayer || [];
+
+        function gtag() {
+            dataLayer.push(arguments);
+        }
+
+        gtag('js', new Date());
+
+        gtag('config', 'G-SJ9P1D5C47');
+    </script>
+
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+
+
+    <meta charset="utf-8">
+    <meta name="description"
+        content="">
+    <meta name="keywords" content="">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title></title>
+
+
+    <link href="https://fonts.googleapis.com/css?family=Google+Sans|Noto+Sans|Castoro" rel="stylesheet">
+
+    <link rel="stylesheet" href="./static/css/bulma.min.css">
+    <link rel="stylesheet" href="./static/css/bulma-carousel.min.css">
+    <link rel="stylesheet" href="./static/css/bulma-slider.min.css">
+    <link rel="stylesheet" href="./static/css/fontawesome.all.min.css">
+
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/jpswalsh/academicons@1/css/academicons.min.css">
+    <link rel="stylesheet" href="./static/css/index.css">
+    <link rel="icon" href="./static/images/favicon.png">
+
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+    <script defer src="./static/js/fontawesome.all.min.js"></script>
+
+    <!--    <script src="./static/js/bulma-carousel.min.js"></script>-->
+    <!--    <script src="./static/js/bulma-slider.min.js"></script>-->
+    <!--    <script src="./static/js/index.js"></script>-->
+
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script src="https://distill.pub/template.v2.js"></script>
+    <link rel="stylesheet" href="style.css">
+    <script src="twgl.min.js"></script>
+    <script type="module" src="noiseNCA.js"></script>
+    <script type="module" src="./demo_rotinv.js"></script>
+    <script type="text/javascript"
+        src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.1/MathJax.js?config=TeX-AMS-MML_HTMLorMML">
+        </script>
+    <script type="text/x-mathjax-config">
+        MathJax.Hub.Config({tex2jax: {inlineMath: [['$','$'], ['\\(','\\)']]}});
+    </script>
+
+</head>
+
+<svg style="display: none;" xmlns="http://www.w3.org/2000/svg">
+    <symbol id="playIcon" viewBox="0 0 24 24">
+        <path d="M8 5v14l11-7z"></path>
+        <path d="M0 0h24v24H0z" fill="none"></path>
+    </symbol>
+    <symbol id="pauseIcon" viewBox="0 0 24 24">
+        <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"></path>
+        <path d="M0 0h24v24H0z" fill="none"></path>
+    </symbol>
+    <symbol id="resetIcon" viewBox="0 0 24 24">
+        <path d="M0 0h24v24H0z" fill="none"></path>
+        <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z">
+        </path>
+    </symbol>
+    <symbol id="zoomInIcon" viewBox="0 0 24 24">
+        <path d="M0 0h24v24H0V0z" fill="none" />
+        <path
+            d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" />
+        <path d="M12 10h-2v2H9v-2H7V9h2V7h1v2h2v1z" />
+    </symbol>
+    <symbol id="zoomOutIcon" viewBox="0 0 24 24">
+        <path d="M0 0h24v24H0V0z" fill="none" />
+        <path
+            d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14zM7 9h5v1H7z" />
+    </symbol>
+    <symbol id="mouse" viewBox="0 0 100 100">
+        <path
+            d="M32,41v18c0,9.9,8.1,18,18,18c9.9,0,18-8.1,18-18V41c0-9.9-8.1-18-18-18C40.1,23,32,31.1,32,41z M50,27c7.7,0,14,6.3,14,14  v18c0,7.7-6.3,14-14,14s-14-6.3-14-14V41C36,33.3,42.3,27,50,27z">
+        </path>
+        <path d="M50,44c1.1,0,2-0.9,2-2v-6c0-1.1-0.9-2-2-2s-2,0.9-2,2v6C48,43.1,48.9,44,50,44z"></path>
+        <path
+            d="M48.6,92.4C49,92.8,49.5,93,50,93s1-0.2,1.4-0.6l5-5c0.8-0.8,0.8-2,0-2.8s-2-0.8-2.8,0L50,88.2l-3.6-3.6  c-0.8-0.8-2-0.8-2.8,0c-0.8,0.8-0.8,2,0,2.8L48.6,92.4z">
+        </path>
+        <path
+            d="M48.6,7.6l-5,5c-0.8,0.8-0.8,2,0,2.8C44,15.8,44.5,16,45,16s1-0.2,1.4-0.6l3.6-3.6l3.6,3.6C54,15.8,54.5,16,55,16  s1-0.2,1.4-0.6c0.8-0.8,0.8-2,0-2.8l-5-5C50.6,6.8,49.4,6.8,48.6,7.6z">
+        </path>
+    </symbol>
+</svg>
+
+
+<body>
+
+
+    <section class="section is-light">
+        <div class="container is-max-desktop">
+
+            <div class="l-body-outset grid" id="demo">
+                <div>
+                    <canvas id="demo-canvas"></canvas>
+
+                    <div class="demo-controls">
+                        <div class="tooltip">
+                            <span id="play-pause">
+
+                                <svg class="demo-icon" id="play" style="display: none;">
+                                    <use xlink:href="#playIcon"></use>
+                                </svg>
+                                <svg class="demo-icon" id="pause">
+                                    <use xlink:href="#pauseIcon"></use>
+                                </svg>
+                            </span>
+                            <svg class="demo-icon" id="reset">
+                                <use xlink:href="#resetIcon"></use>
+                            </svg>
+                            <svg class="demo-icon" id="zoomIn">
+                                <use xlink:href="#zoomInIcon"></use>
+                            </svg>
+                            <svg class="demo-icon disabled" id="zoomOut">
+                                <use xlink:href="#zoomOutIcon"></use>
+                            </svg>
+
+                            <span id="record" style="display: none;">
+                                <img id="record_off" src="data/images/record_off.png" width="40px" height="40px"
+                                    style="padding: 4px; padding-bottom: 2px" />
+                                <img id="record_on" src="data/images/record_on.png" width="40px" height="40px"
+                                    style="padding: 4px; padding-bottom: 2px; display: none;" />
+                            </span>
+
+                            <!--                        <label>-->
+                            <!--                            <img id="screenshot" src="data/images/screenshot.png" width="30px" height="30px"/>-->
+                            <!--                        </label>-->
+
+                            <!--                            <label><img id="benchmark"-->
+                            <!--                                        src="data/images/benchmark.png" width="50px" height="50px"/></label>-->
+
+                        </div>
+                        <div class="speed">
+                            <input type="range" id="speed" min="-4" max="4" step="1" value="0"></br>Steps / Frame:
+                            <label id="speedLabel"></label>
+
+                        </div>
+
+                        <div style="text-align: center; background: #eee;">
+                            <label class="toggler-wrapper style-19">
+
+                                <input type="checkbox" id="scaling_mode" checked="checked">
+                                <div class="toggler-slider">
+                                    <div class="toggler-knob"></div>
+                                </div>
+
+
+                            </label>
+
+
+                            <!--                        <br><br><br>-->
+                            <!--                        &nbsp; Scaling Mode &nbsp;<hr>-->
+
+
+                        </div>
+
+
+                        <div>
+
+                            <input type="range" id="dx" min="-0.585" max="1.0" step="0.001" value="0.0"></br>$\Delta x
+                            = $
+                            <label id="dxLabel"></label>
+
+                            <input type="range" id="dy" min="-0.585" max="1.0" step="0.001" value="0.0"></br>$\Delta y
+                            = $
+                            <label id="dyLabel"></label>
+                        </div>
+
+
+                        <div id='brushSelect' class="button-group">
+                            <label>
+                                <input type="radio" name="brush"><img src="data/images/brush_S.png" width="38px"
+                                    height="38px" />
+                            </label>
+                            <label>
+                                <input type="radio" name="brush"><img src="data/images/brush_M.png" width="38px"
+                                    height="38px" />
+                            </label>
+                            <label>
+                                <input type="radio" name="brush" checked="checked"><img src="data/images/brush_L.png"
+                                    width="38px" height="38px" />
+                            </label>
+                            <br> Brush Size
+
+                        </div>
+
+                        <div>
+                            <input type="range" id="dt" min="0.01" max="1.0" step="0.01" value="1.0"></br>$\Delta t = $
+                            <label id="dtLabel"></label>
+
+                            <input type="range" id="epsilon" min="0.0" max="1.0" step="0.001" value="0.0"></br>$\epsilon = $
+                            <label id="epsilonLabel"></label>
+                        </div>
+
+                        <div id="viewChannelSelect" class="button-group" style="text-align: center;">
+                            <select id="channelSelect" style="padding: 4px; font-size: 12px;">
+                                <option value="rgb">RGB</option>
+                                <option value="grayscale">Grayscale</option>
+                            </select>
+                            <br>View Channel
+                        </div>
+
+                        <div>
+                            <!-- Empty placeholder for grid alignment -->
+                        </div>
+
+                        <div id='alignSelect' class="button-group">
+                            <label>
+                                <input type="radio" checked="checked" name="align"><img
+                                    src="data/images/icons.svg#alignRegular" />
+                            </label>
+                            <label>
+                                <input type="radio" name="align"><img src="data/images/icons.svg#alignPolar" />
+                            </label>
+                            <label>
+                                <input type="radio" name="align"><img src="data/images/icons.svg#alignDipole" />
+                            </label>
+                            <br>Cell Alignment
+                        </div>
+                        <!--                        <div id='configSelect' class="button-group">-->
+                        <!--                            <label>-->
+                        <!--                                <input type="radio" name="config"><img-->
+                        <!--                                    src="data/images/config_S.png" width="38px" height="38px"/>-->
+                        <!--                            </label>-->
+                        <!--                            <label>-->
+                        <!--                                <input type="radio" name="config" checked="checked"><img src="data/images/config_L.png"-->
+                        <!--                                                                                         width="38px"-->
+                        <!--                                                                                         height="38px"/>-->
+                        <!--                            </label>-->
+                        <!--                            <br>NoiseNCA Config-->
+                        <!--                        </div>-->
+
+                        <div>
+                            <input type="range" id="rotation" min="0" max="360" step="1" value="0"></br>Rotation: <label
+                                id="rotationLabel"></label><br>
+                            <input type="range" id="resolution" min="-2" max="2" step="1" value="0"></br>Resolution:
+                            <label id="resolutionLabel"></label>
+                        </div>
+                        <!--            <div id='RotPosEmb' class="button-group">-->
+                        <!--                <label>-->
+                        <!--                    <input type="radio" checked="checked" name="rpe"><img src="data/images/icons.svg#gridSquare"/>-->
+                        <!--                </label>-->
+                        <!--                <label>-->
+                        <!--                    <input type="radio" name="grid" id='nrpe'><img src="data/images/icons.svg#gridHex"/>-->
+                        <!--                </label>-->
+                        <!--                <br>Rotate Positional <br>Embedding-->
+                        <!--            </div>-->
+                    </div>
+                    <br>
+                    <div id="demo-tip">
+
+                        <img id="pointer" src="data/images/pointer.svg">
+                        <div class="hint ">
+                            Click or tap the image to erase parts of the pattern.
+
+                        </div>
+
+                    
+                    </div>
+                    <div class="is-left has-text-left">
+                        <p style="font-size: 10pt">
+                            When changing $(\Delta x, \Delta y)$, we automatically adjust the value of $\Delta t$ to
+                            avoid
+                            the Euler integration from overshooting.
+                            <br>
+                            In the Isotropic mode, the scaling factors are forced to be equal $\Delta x = \Delta y$.
+
+                        </p>
+
+                        <br>
+                    </div>
+
+                    <p style="font-size: 10pt; text-align: center; margin-top: 10px;">
+                        This demo is based off of the one from NoiseNCA. 
+
+                </div>
+
+                
+                <div id="pattern-controls">
+                    <div class="pattern-selector-title" id="pattern_selector_title">
+                        <span>Target Appearance</span>
+                    </div>
+                    <!--                    <div class="texture-overlay overlaygrad">-->
+                    <!--                    </div>-->
+                    <!--                    <div class="texture-overlay overlayicon">-->
+                    <!--                    </div>-->
+                    <div id="texture" class="pattern-selector">
+                        <!-- a hacky way to add some padding, so the fadeout doesn't cover items in the scroll. -->
+                        <div class="whitespace"></div>
+                    </div>
+
+                    <div style="text-align: center; padding: 8px; grid-column: 1 / -1; display: flex; align-items: center; justify-content: center; gap: 20px;">
+                        <label style="cursor: pointer;">
+                            <input type="checkbox" id="invertColors"> Invert Colors
+                        </label>
+                    </div>
+
+                    <!--                    <div class="motion-overlay overlaygrad" id="motion_overlay_grad">-->
+                    <!--                    </div>-->
+                    <!--                    <div class="motion-overlay overlayicon" id="motion_overlay_icon">-->
+                    <!--                    </div>-->
+
+                    <div id="texhint">
+
+                        <div id="origtex">
+                        </div>
+                        <span id="texhinttext"></span>
+                    </div>
+
+
+                </div>
+
+
+            </div>
+        </div>
+    </section>
+
+</body>
+
+</html>
+
+
+<!--<script src="https://cdn.jsdelivr.net/npm/twgl-base.js@4.9.0/dist/4.x/twgl.min.js"></script>-->
+<!--<script src="https://twgljs.org/dist/5.x/twgl-full.min.js"></script>-->
+<!--<script src="twgl-full.module.js"></script>-->
+<script src="twgl.min.js"></script>
+
+<script src="dat.gui.min.js"></script>
+<script type="module">
+    import { createDemo } from './demo_rotinv.js'
+
+    createDemo('demo');
+</script>
